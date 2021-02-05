@@ -57,14 +57,23 @@ class MyAuthProvider : IAuthenticationProvider {
 
     public async Task AuthenticateRequestAsync(HttpRequestMessage request) {
         var accounts = await app.GetAccountsAsync();
-        AuthenticationResult result = await app.AcquireTokenSilent(scopes, accounts.FirstOrDefault()).ExecuteAsync();
-        if (result == null) {
+        // DO NOT DO THIS AT HOME :)
+        AuthenticationResult result;
+        if (!accounts.Any()) {
             result = await app.AcquireTokenWithDeviceCode(scopes, x => {
                 Console.WriteLine(x.Message);
                 return Task.FromResult(0);
             }).ExecuteAsync();
+        } else {
+            result = await app.AcquireTokenSilent(scopes, accounts.First()).ExecuteAsync();
+            if (result == null) {
+                result = await app.AcquireTokenWithDeviceCode(scopes, x => {
+                    Console.WriteLine(x.Message);
+                    return Task.FromResult(0);
+                }).ExecuteAsync();
+            }
         }
-        
+
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
     }
 }
@@ -86,7 +95,10 @@ void Main() {
         .Build();
 
 #region Caching
-    var cachedTokenPath = @"graph.token";
+    var cachedTokenPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".graph.token");
+
     app.UserTokenCache.SetBeforeAccess(x => {
         if (System.IO.File.Exists(cachedTokenPath)) {
             x.TokenCache.DeserializeMsalV3(
